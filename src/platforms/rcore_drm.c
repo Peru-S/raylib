@@ -18,9 +18,9 @@
 *
 *   CONFIGURATION:
 *       #define SUPPORT_SSH_KEYBOARD_RPI (Raspberry Pi only)
-*           Reconfigure standard input to receive key inputs, works with SSH connection.
+*           Reconfigure standard input to receive key inputs, works with SSH connection
 *           WARNING: Reconfiguring standard input could lead to undesired effects, like breaking other
-*           running processes orblocking the device if not restored properly. Use with care.
+*           running processes orblocking the device if not restored properly. Use with care
 *
 *   DEPENDENCIES:
 *       - DRM and GLM: System libraries for display initialization and configuration
@@ -53,6 +53,7 @@
 #include <termios.h>        // POSIX terminal control definitions - tcgetattr(), tcsetattr()
 #include <pthread.h>        // POSIX threads management (inputs reading)
 #include <dirent.h>         // POSIX directory browsing
+#include <limits.h>         // INT_MAX
 
 #include <sys/ioctl.h>      // Required for: ioctl() - UNIX System call for device-specific input/output operations
 #include <linux/kd.h>       // Linux: KDSKBMODE, K_MEDIUMRAM constants definition
@@ -155,7 +156,7 @@ extern CoreData CORE;                   // Global CORE state context
 static PlatformData platform = { 0 };   // Platform specific data
 
 //----------------------------------------------------------------------------------
-// Local Variables Definition
+// Global Variables Definition
 //----------------------------------------------------------------------------------
 
 // NOTE: The complete evdev EV_KEY list can be found at /usr/include/linux/input-event-codes.h
@@ -244,6 +245,7 @@ static void RestoreKeyboard(void);              // Restore keyboard system
 static void ProcessKeyboard(void);              // Process keyboard events
 #endif
 
+// Input management functions
 static void InitEvdevInput(void);               // Initialize evdev inputs
 static void ConfigureEvdevDevice(char *device); // Identifies a input device and configures it for use if appropriate
 static void PollKeyboardEvents(void);           // Process evdev keyboard events
@@ -556,7 +558,7 @@ void EnableCursor(void)
     SetMousePosition(CORE.Window.screen.width/2, CORE.Window.screen.height/2);
 
     platform.cursorRelative = false;
-    CORE.Input.Mouse.cursorHidden = false;
+    CORE.Input.Mouse.cursorLocked = false;
 }
 
 // Disables cursor (lock cursor)
@@ -566,7 +568,7 @@ void DisableCursor(void)
     SetMousePosition(0, 0);
 
     platform.cursorRelative = true;
-    CORE.Input.Mouse.cursorHidden = true;
+    CORE.Input.Mouse.cursorLocked = true;
 }
 
 #if defined(SUPPORT_DRM_CACHE)
@@ -702,7 +704,7 @@ void SwapScreenBuffer()
     if (!crtcSet || !platform.gbmSurface) return;
 
     static int loopCnt = 0;
-    static int errCnt[5] = {0};
+    static int errCnt[5] = { 0 };
     loopCnt++;
 
     // Call this only, if pendingFlip is not set
@@ -744,11 +746,11 @@ void SwapScreenBuffer()
     }
 
     // Attempt page flip
-    // NOTE: rmModePageFlip() schedules a buffer-flip for the next vblank and then notifies us about it.
-    // It takes a CRTC-id, fb-id and an arbitrary data-pointer and then schedules the page-flip.
-    // This is fully asynchronous and when the page-flip happens, the DRM-fd will become readable and we can call drmHandleEvent().
-    // This will read all vblank/page-flip events and call our modeset_page_flip_event() callback with the data-pointer that we passed to drmModePageFlip().
-    // We simply call modeset_draw_dev() then so the next frame is rendered... returns immediately.
+    // NOTE: rmModePageFlip() schedules a buffer-flip for the next vblank and then notifies us about it
+    // It takes a CRTC-id, fb-id and an arbitrary data-pointer and then schedules the page-flip
+    // This is fully asynchronous and when the page-flip happens, the DRM-fd will become readable and we can call drmHandleEvent()
+    // This will read all vblank/page-flip events and call our modeset_page_flip_event() callback with the data-pointer that we passed to drmModePageFlip()
+    // We simply call modeset_draw_dev() then so the next frame is rendered... returns immediately
     if (drmModePageFlip(platform.fd, platform.crtc->crtc_id, fbId, DRM_MODE_PAGE_FLIP_EVENT, platform.prevBO))
     {
         if (errno == EBUSY) errCnt[3]++; // Display busy - skip flip
@@ -824,9 +826,9 @@ double GetTime(void)
 }
 
 // Open URL with default system browser (if available)
-// NOTE: This function is only safe to use if you control the URL given.
-// A user could craft a malicious string performing another action.
-// Only call this function yourself not with user input or make sure to check the string yourself.
+// NOTE: This function is only safe to use if you control the URL given
+// A user could craft a malicious string performing another action
+// Only call this function yourself not with user input or make sure to check the string yourself
 // Ref: https://github.com/raysan5/raylib/issues/686
 void OpenURL(const char *url)
 {
@@ -863,7 +865,7 @@ void SetMouseCursor(int cursor)
     TRACELOG(LOG_WARNING, "SetMouseCursor() not implemented on target platform");
 }
 
-// Get physical key name.
+// Get physical key name
 const char *GetKeyName(int key)
 {
     TRACELOG(LOG_WARNING, "GetKeyName() not implemented on target platform");
@@ -897,7 +899,7 @@ void PollInputEvents(void)
     PollKeyboardEvents();
 
 #if defined(SUPPORT_SSH_KEYBOARD_RPI)
-    // NOTE: Keyboard reading could be done using input_event(s) or just read from stdin, both methods are used here.
+    // NOTE: Keyboard reading could be done using input_event(s) or just read from stdin, both methods are used here
     // stdin reading is still used for legacy purposes, it allows keyboard input trough SSH console
     if (!platform.eventKeyboardMode) ProcessKeyboard();
 #endif
@@ -1003,8 +1005,8 @@ int InitPlatform(void)
         drmModeConnector *con = drmModeGetConnector(platform.fd, res->connectors[i]);
         TRACELOG(LOG_TRACE, "DISPLAY: Connector modes detected: %i", con->count_modes);
 
-        // In certain cases the status of the conneciton is reported as UKNOWN, but it is still connected.
-        // This might be a hardware or software limitation like on Raspberry Pi Zero with composite output.
+        // In certain cases the status of the conneciton is reported as UKNOWN, but it is still connected
+        // This might be a hardware or software limitation like on Raspberry Pi Zero with composite output
         if (((con->connection == DRM_MODE_CONNECTED) || (con->connection == DRM_MODE_UNKNOWNCONNECTION)) && (con->encoder_id))
         {
             TRACELOG(LOG_TRACE, "DISPLAY: DRM mode connected");
@@ -1160,7 +1162,7 @@ int InitPlatform(void)
     // Initialize the EGL device connection
     if (eglInitialize(platform.device, NULL, NULL) == EGL_FALSE)
     {
-        // If all of the calls to eglInitialize returned EGL_FALSE then an error has occurred.
+        // If all of the calls to eglInitialize returned EGL_FALSE then an error has occurred
         TRACELOG(LOG_WARNING, "DISPLAY: Failed to initialize EGL device");
         return -1;
     }
@@ -1556,7 +1558,7 @@ static void ProcessKeyboard(void)
         {
             CORE.Input.Keyboard.currentKeyState[259] = 1;
 
-            CORE.Input.Keyboard.keyPressedQueue[CORE.Input.Keyboard.keyPressedQueueCount] = 257;     // Add keys pressed into queue
+            CORE.Input.Keyboard.keyPressedQueue[CORE.Input.Keyboard.keyPressedQueueCount] = 259;     // Add keys pressed into queue
             CORE.Input.Keyboard.keyPressedQueueCount++;
         }
         else
@@ -1644,7 +1646,7 @@ static void ConfigureEvdevDevice(char *device)
         return;
     }
 
-    // At this point we have a connection to the device, but we don't yet know what the device is.
+    // At this point we have a connection to the device, but we don't yet know what the device is
     // It could be many things, even as simple as a power button...
     //-------------------------------------------------------------------------------------------------------
 
@@ -2060,7 +2062,7 @@ static void PollMouseEvents(void)
         }
 
         // Screen confinement
-        if (!CORE.Input.Mouse.cursorHidden)
+        if (!CORE.Input.Mouse.cursorLocked)
         {
             if (CORE.Input.Mouse.currentPosition.x < 0) CORE.Input.Mouse.currentPosition.x = 0;
             if (CORE.Input.Mouse.currentPosition.x > CORE.Window.screen.width/CORE.Input.Mouse.scale.x) CORE.Input.Mouse.currentPosition.x = CORE.Window.screen.width/CORE.Input.Mouse.scale.x;
@@ -2150,6 +2152,8 @@ static int FindNearestConnectorMode(const drmModeConnector *connector, uint widt
     if (NULL == connector) return -1;
 
     int nearestIndex = -1;
+    int minUnusedPixels = INT_MAX;
+    int minFpsDiff = INT_MAX;
     for (int i = 0; i < platform.connector->count_modes; i++)
     {
         const drmModeModeInfo *const mode = &platform.connector->modes[i];
@@ -2169,21 +2173,17 @@ static int FindNearestConnectorMode(const drmModeConnector *connector, uint widt
             continue;
         }
 
-        if (nearestIndex < 0)
+        const int unusedPixels = (mode->hdisplay - width) * (mode->vdisplay - height);
+        const int fpsDiff = mode->vrefresh - fps;
+
+        if ((unusedPixels < minUnusedPixels) ||
+            ((unusedPixels == minUnusedPixels) && (abs(fpsDiff) < abs(minFpsDiff))) ||
+            ((unusedPixels == minUnusedPixels) && (abs(fpsDiff) == abs(minFpsDiff)) && (fpsDiff > 0)))
         {
             nearestIndex = i;
-            continue;
+            minUnusedPixels = unusedPixels;
+            minFpsDiff = fpsDiff;
         }
-
-        const int widthDiff = abs(mode->hdisplay - width);
-        const int heightDiff = abs(mode->vdisplay - height);
-        const int fpsDiff = abs(mode->vrefresh - fps);
-
-        const int nearestWidthDiff = abs(platform.connector->modes[nearestIndex].hdisplay - width);
-        const int nearestHeightDiff = abs(platform.connector->modes[nearestIndex].vdisplay - height);
-        const int nearestFpsDiff = abs(platform.connector->modes[nearestIndex].vrefresh - fps);
-
-        if ((widthDiff < nearestWidthDiff) || (heightDiff < nearestHeightDiff) || (fpsDiff < nearestFpsDiff)) nearestIndex = i;
     }
 
     return nearestIndex;
